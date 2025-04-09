@@ -10,7 +10,12 @@ api_key = "AIzaSyDdmyM4oQfJRy6k0U84DpcDSebRozXGx-s"  # ← šeit ieliec savu par
 
 # 🔗 Google Sheet konfigurācija
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("nrj-cenu-kalkulators.json", scope)
+import json
+import os
+
+service_account_info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
+creds = ServiceAccountCredentials.from_json_keyfile_dict(service_account_info, scope)
+
 client = gspread.authorize(creds)
 sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1dzvGI_uoFCJuwnhDj64hEmEwimTbLmW0XVfK54LUZRs")
 lapas = sheet.worksheets()
@@ -58,4 +63,4 @@ def gemini_chat():
     return jsonify({"atbilde": atbilde})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5050)
