@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+  <meta charset="UTF-8">
+  <title>ChatGPT</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      display: flex;
+      height: 100vh;
+      background-color: #ffffff;
+      color: #000;
+    }
+    .sidebar {
+      background-color: #f3f3f3;
+      padding: 12px;
+      width: 260px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      border-right: 1px solid #ccc;
+    }
+    .sidebar button {
+      padding: 12px;
+      background-color: #10a37f;
+      color: white;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 6px;
+      text-align: left;
+    }
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background-color: #f9f9f9;
+    }
+    .chat-messages {
+      flex: 1;
+      padding: 30px;
+      overflow-y: auto;
+    }
+    .chat-message {
+      max-width: 80%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      margin: 8px 0;
+      line-height: 1.5;
+    }
+    .user {
+      background-color: #dafbe1;
+      align-self: flex-end;
+    }
+    .bot {
+      background-color: #eaeaea;
+      align-self: flex-start;
+    }
+    .chat-input {
+      display: flex;
+      padding: 16px;
+      background-color: white;
+      border-top: 1px solid #ccc;
+      align-items: center;
+    }
+    .chat-input textarea {
+      flex: 1;
+      resize: none;
+      font-size: 16px;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      height: 50px;
+    }
+    .chat-input button {
+      margin-left: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: #10a37f;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .chat-input .plus {
+      font-size: 24px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <button onclick="newProject()">🗂️ Jauns projekts</button>
+    <button onclick="viewProjects()">📁 Mani projekti</button>
+  </div>
+
+  <div class="chat-container">
+    <div class="chat-messages" id="chat"></div>
+    <div class="chat-input">
+      <button class="plus">+</button>
+      <textarea id="jautajums" placeholder="Jautā kaut ko…"></textarea>
+      <button onclick="sendMessage()">Sūtīt</button>
+    </div>
+  </div>
+
+  <script>
+    function newProject() {
+      alert("🗂️ Jauns projekts – funkcionalitāte vēl nav ieviesta");
+    }
+
+    function viewProjects() {
+      alert("📁 Mani projekti – funkcionalitāte vēl nav ieviesta");
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById("jautajums");
+      const text = input.value.trim();
+      if (!text) return;
+
+      appendMessage("user", text);
+      input.value = "";
+
+      try {
+        const res = await fetch("/gemini", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jautajums: text })
+        });
+        const data = await res.json();
+        appendMessage("bot", data.atbilde || "❌ Nav atbildes");
+      } catch (err) {
+        appendMessage("bot", "❌ Kļūda pieprasot atbildi no servera.");
+      }
+    }
+
+    function appendMessage(role, text) {
+      const chat = document.getElementById("chat");
+      const msg = document.createElement("div");
+      msg.className = `chat-message ${role}`;
+      msg.innerText = text;
+      chat.appendChild(msg);
+      chat.scrollTop = chat.scrollHeight;
+    }
+  </script>
+</body>
+</html>
