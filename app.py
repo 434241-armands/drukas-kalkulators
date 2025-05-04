@@ -67,6 +67,7 @@ for i, rinda in enumerate(noteikumi_rindas, start=1):
     {saturs}
 
     Jautājums: {jautajums}"""
+                    }
                 ]
             }
         ]
