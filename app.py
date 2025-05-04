@@ -56,12 +56,12 @@ for i, rinda in enumerate(noteikumi_rindas, start=1):
 
     # 👇 Izveido pieprasījumu uz Gemini
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key={api_key}"
-    payload = {
-    "contents": [
-        {
-            "parts": [
-                {
-                    "text": f"""Tavs uzdevums ir noteikt cenu drukai, balstoties uz šādiem piemēriem un tabulu (skatīt zemāk).
+        payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": f"""Tavs uzdevums ir noteikt cenu drukai, balstoties uz šādiem piemēriem un tabulu (skatīt zemāk).
     Lūdzu, ņem vērā dotās kļūdas un pareizās atbildes.
 
     Noteikumi:
@@ -90,5 +90,5 @@ for i, rinda in enumerate(noteikumi_rindas, start=1):
     atbilde = response.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Nav atbildes")
     return jsonify({"atbilde": atbilde})
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5050)
+    if __name__ == "__main__":
+        app.run(host="0.0.0.0", port=5050)
