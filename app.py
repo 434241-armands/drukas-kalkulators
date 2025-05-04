@@ -26,6 +26,13 @@ def index():
 
 @app.route("/gemini", methods=["POST"])
 def gemini_chat():
+    # 📌 Nolasa Gemini Promt lapu (noteikumi, piemēri)
+noteikumi_lapa = lapas[-1]  # pieņemam, ka pēdējā lapa ir "Gemini Promt"
+noteikumi_rindas = noteikumi_lapa.get_all_values()[1:]  # skip header
+noteikumi = ""
+for i, rinda in enumerate(noteikumi_rindas, start=1):
+    if len(rinda) >= 3:
+        noteikumi += f"{i}. ❓ {rinda[0]}\n   ❌ {rinda[1]}\n   ✅ {rinda[2]}\n\n"
     dati = request.get_json()
     jautajums = dati.get("jautajums")
 
@@ -46,7 +53,7 @@ def gemini_chat():
         "contents": [
             {
                 "parts": [
-                    {"text": f"Tavs uzdevums ir noteikt cenu drukai, balstoties uz tabulām (skatīt zemāk). Lūdzu, atbildi tikai ar cenu un paskaidrojumu.\n\nTabulas:\n{saturs}\n\nJautājums: {jautajums}"}
+                    "text": f"Tavs uzdevums ir noteikt cenu drukai, balstoties uz šādiem piemēriem un tabulu (skatīt zemāk). Lūdzu, ņem vērā dotās kļūdas un pareizās atbildes.\n\nNoteikumi:\n{noteikumi}\n\nTabulas:\n{saturs}\n\nJautājums: {jautajums}"
                 ]
             }
         ]
