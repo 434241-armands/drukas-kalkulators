@@ -30,9 +30,9 @@ def index():
 @app.route("/gemini", methods=["POST"])
 def gemini_chat():
     # 📌 Nolasa Gemini Promt lapu (noteikumi, piemēri)
-noteikumi_lapa = lapas[-1]  # pieņemam, ka pēdējā lapa ir "Gemini Promt"
-noteikumi_rindas = noteikumi_lapa.get_all_values()[1:]  # skip header
-noteikumi = ""
+    noteikumi_lapa = lapas[-1]  # pieņemam, ka pēdējā lapa ir "Gemini Promt"
+    noteikumi_rindas = noteikumi_lapa.get_all_values()[1:]  # skip header
+    noteikumi = ""
 for i, rinda in enumerate(noteikumi_rindas, start=1):
     if len(rinda) >= 3:
         noteikumi += f"{i}. ❓ {rinda[0]}\n   ❌ {rinda[1]}\n   ✅ {rinda[2]}\n\n"
