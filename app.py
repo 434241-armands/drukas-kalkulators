@@ -59,6 +59,9 @@ for i, rinda in enumerate(noteikumi_rindas, start=1):
         ]
     }
 
+    print("==== PROMTS ====")
+    print(f"{noteikumi}\n\n{saturs}\n\n{jautajums}")
+    
     response = requests.post(url, json=payload)
     if response.status_code != 200:
         print("Gemini status:", response.status_code)
