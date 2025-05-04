@@ -1,6 +1,10 @@
-@app.route("/")
-def index():
-    return render_template("index.html")
+@app.route("/gemini", methods=["POST"])
+def gemini_chat():
+    dati = request.get_json()
+    jautajums = dati.get("jautajums")
+
+    if not jautajums:
+        return jsonify({"atbilde": "❗️ Nav saņemts jautājums"}), 400
 from flask import Flask, request, jsonify, render_template
 import requests
 import gspread
