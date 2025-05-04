@@ -56,7 +56,16 @@ for i, rinda in enumerate(noteikumi_rindas, start=1):
         "contents": [
             {
                 "parts": [
-                    "text": f"Tavs uzdevums ir noteikt cenu drukai, balstoties uz šādiem piemēriem un tabulu (skatīt zemāk). Lūdzu, ņem vērā dotās kļūdas un pareizās atbildes.\n\nNoteikumi:\n{noteikumi}\n\nTabulas:\n{saturs}\n\nJautājums: {jautajums}"
+                   "text": f"""Tavs uzdevums ir noteikt cenu drukai, balstoties uz šādiem piemēriem un tabulu (skatīt zemāk). 
+    Lūdzu, ņem vērā dotās kļūdas un pareizās atbildes.
+
+    Noteikumi:
+    {noteikumi}
+
+    Tabulas:
+    {saturs}
+
+    Jautājums: {jautajums}""
                 ]
             }
         ]
