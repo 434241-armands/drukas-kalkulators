@@ -53,10 +53,11 @@ for i, rinda in enumerate(noteikumi_rindas, start=1):
     # 👇 Izveido pieprasījumu uz Gemini
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key={api_key}"
     payload = {
-        "contents": [
-            {
-                "parts": [
-                   "text": f"""Tavs uzdevums ir noteikt cenu drukai, balstoties uz šādiem piemēriem un tabulu (skatīt zemāk). 
+    "contents": [
+        {
+            "parts": [
+                {
+                    "text": f"""Tavs uzdevums ir noteikt cenu drukai, balstoties uz šādiem piemēriem un tabulu (skatīt zemāk).
     Lūdzu, ņem vērā dotās kļūdas un pareizās atbildes.
 
     Noteikumi:
