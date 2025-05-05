@@ -30,15 +30,29 @@ def index():
 @app.route("/gemini", methods=["POST"])
 def gemini_chat():
     data     = request.get_json()
-    jautajums= data.get("jautajums", "")
+    jautajums = data.get("jautajums", "")
 
-    # … šeit iet tava loģika: nolasīt Google Sheet, sakraut `noteikumi` un `saturs` …
+    # 1) Saliekam promptu vienā mainīgajā
+    tekst = (
+        f"Tavs uzdevums ir noteikt cenu drukai, balstoties uz šādiem piemēriem un tabulu.\n"
+        f"Lūdzu, ņem vērā kļūdas un pareizās atbildes.\n\n"
+        f"Noteikumi:\n{noteikumi}\n\n"
+        f"Tabulas:\n{saturs}\n\n"
+        f"Jautājums: {jautajums}"
+    )
 
+    # 2) Tagad droši varam veidot payload
     payload = {
-      "contents":[
-        {"parts":[{"text": tekst}]}  # kur `tekst` ir saliktā prompta string
-      ]
+        "contents": [
+            {
+                "parts": [
+                    {"text": tekst}
+                ]
+            }
+        ]
     }
+
+    # … pārējā loģika (requests.post, error-handling utt.) …
 
     # ── Debug print ──
     print("===== GEMINI PAYLOAD =====")
