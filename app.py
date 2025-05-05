@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, render_template
 import os
 import json
 import requests
-gspread
+import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 app = Flask(__name__, template_folder="templates")
