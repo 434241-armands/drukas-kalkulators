@@ -27,30 +27,21 @@ client = gspread.authorize(creds)
 def index():
     return render_template("index.html")
   
+import traceback
+
 @app.route("/gemini", methods=["POST"])
 def gemini_chat():
-    data     = request.get_json()
-    jautajums = data.get("jautajums", "")
-
-    # 1) Saliekam promptu vienā mainīgajā
-    tekst = (
-        f"Tavs uzdevums ir noteikt cenu drukai, balstoties uz šādiem piemēriem un tabulu.\n"
-        f"Lūdzu, ņem vērā kļūdas un pareizās atbildes.\n\n"
-        f"Noteikumi:\n{noteikumi}\n\n"
-        f"Tabulas:\n{saturs}\n\n"
-        f"Jautājums: {jautajums}"
-    )
-
-    # 2) Tagad droši varam veidot payload
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": tekst}
-                ]
-            }
-        ]
-    }
+    try:
+        # … tur tava esošā loģika, kur saliec noteikumi, saturs, jautajums utt. …
+        # iemācies: definē noteikumi un saturs pirms to lietošanā!
+        # ...
+        return jsonify({"atbilde": atbilde})
+    except Exception as e:
+        print("❌ GEMINI HANDLER ERROR ❌")
+        traceback.print_exc()        # ← te tu redzēsi pilnu stack trace Render Logs
+        return jsonify({
+            "atbilde": f"Kļūda serverī: {e}"
+        }), 500
 
     # … pārējā loģika (requests.post, error-handling utt.) …
 
