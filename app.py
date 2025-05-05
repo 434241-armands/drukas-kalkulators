@@ -25,9 +25,7 @@ client = gspread.authorize(creds)
 # ────── 2) Tavs endpoint ──────
 @app.route("/", methods=["GET"])
 def index():
-    # ja tev ir index.html templates mapē, vari arī:
-    # return render_template("index.html")
-    return "Drukas kalkulators darbojas!"
+    return render_template("index.html")
   
 @app.route("/gemini", methods=["POST"])
 def gemini_chat():
