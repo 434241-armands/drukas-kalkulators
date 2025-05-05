@@ -21,6 +21,10 @@ SCOPE      = ["https://spreadsheets.google.com/feeds","https://www.googleapis.co
 CREDS_PATH = "/etc/secrets/google-credentials.json"  # Render Secret Files mount
 creds      = ServiceAccountCredentials.from_json_keyfile_name(CREDS_PATH, SCOPE)
 gc         = gspread.authorize(creds)
+
+SHEET_ID = os.getenv("SHEET_ID")
+workbook  = gc.open_by_key(SHEET_ID)
+worksheet = workbook.worksheet("Gemini Prompt")
 sheet_url  = "https://docs.google.com/spreadsheets/d/https://docs.google.com/spreadsheets/d/1dzvGI_uoFCJuwnhDj64hEmEwimTbLmW0XVfK54LUZRs/edit?gid=0#gid=0"
 worksheet  = gc.open_by_url(sheet_url).worksheet("Gemini Prompt")
 
