@@ -1,5 +1,7 @@
 from flask import Flask, request, jsonify, render_template
 import os
+SHEET_ID = os.environ["SHEET_ID"]  # iestatāsi šo Rendera vai GitHub env.
+sheet = gc.open_by_key(SHEET_ID).worksheet("Gemini Prompt")
 import json
 import requests
 import gspread
