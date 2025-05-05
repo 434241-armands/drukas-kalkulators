@@ -7,6 +7,58 @@ import os
 
 app = Flask(__name__, template_folder="templates")
 
+# ────── 1) Globālie objekti ──────
+api_key = os.environ.get("API_KEY") or "tavs-api-key"
+url     = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key={api_key}"
+
+scope = [
+  "https://spreadsheets.google.com/feeds",
+  "https://www.googleapis.com/auth/drive"
+]
+
+creds  = ServiceAccountCredentials.from_json_keyfile_name(
+  "/etc/secrets/google-credentials.json",
+  scope
+)
+client = gspread.authorize(creds)
+
+# ────── 2) Tavs endpoint ──────
+@app.route("/gemini", methods=["POST"])
+def gemini_chat():
+    data     = request.get_json()
+    jautajums= data.get("jautajums", "")
+
+    # … šeit iet tava loģika: nolasīt Google Sheet, sakraut `noteikumi` un `saturs` …
+
+    payload = {
+      "contents":[
+        {"parts":[{"text": tekst}]}  # kur `tekst` ir saliktā prompta string
+      ]
+    }
+
+    # ── Debug print ──
+    print("===== GEMINI PAYLOAD =====")
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+
+    # ── Calls ──
+    response = requests.post(url, json=payload)
+
+    # ── Debug print atbilde ──
+    print("===== GEMINI RAW RESPONSE =====")
+    print("Status:", response.status_code)
+    print(response.text)
+    try:
+        print("Parsed JSON:", json.dumps(response.json(), indent=2, ensure_ascii=False))
+    except:
+        print("Response not JSON.")
+
+    # ── Gala atbilde ──
+    cand = response.json().get("candidates", [{}])[0]
+    text= cand.get("content", {}).get("parts", [])[0].get("text", "Nav atbildes")
+    return jsonify({"atbilde": text})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5050)
 api_key = "AIzAsSyDdmqY40qJrY6k8U04DpCsBEboRzXGx-s"
 
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
