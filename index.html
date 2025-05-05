@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+  <meta charset="UTF-8" />
+  <title>Drukas kalkulators</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 2em auto; }
+    label, textarea, button, #result { width: 100%; margin: .5em 0; }
+    #result { white-space: pre-wrap; background: #f4f4f4; padding: 1em; border-radius: 4px;}
+  </style>
+</head>
+<body>
+  <h1>Drukas kalkulators (Gemini)</h1>
+  <form id="gemini-form">
+    <label for="jautajums">Ieraksti jautājumu:</label>
+    <textarea id="jautajums" name="jautajums" rows="3" placeholder="Piem., cik maksā 10 kreklus?"></textarea>
+    <button type="submit">Skaitīt cenu</button>
+  </form>
+  <h2>Atbilde:</h2>
+  <div id="result">— šeit parādīsies atbilde —</div>
+
+  <script>
+    document.getElementById('gemini-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const jautajums = document.getElementById('jautajums').value;
+      document.getElementById('result').textContent = '…gaidu atbildi…';
+      try {
+        const resp = await fetch('/gemini', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jautajums })
+        });
+        const data = await resp.json();
+        document.getElementById('result').textContent = data.atbilde;
+      } catch (err) {
+        document.getElementById('result').textContent = 'Kļūda: ' + err;
+      }
+    });
+  </script>
+</body>
+</html>
