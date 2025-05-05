@@ -11,8 +11,11 @@ api_key = "AIzAsSyDdmqY40qJrY6k8U04DpCsBEboRzXGx-s"
 
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
-service_account_info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
-creds = ServiceAccountCredentials.from_json_keyfile_dict(service_account_info, scope)
+# 🔑 Izmanto Render Secret File ar Google servisa konta atslēgu
+creds = ServiceAccountCredentials.from_json_keyfile_name(
+    "/etc/secrets/google-credentials.json",
+    scope
+)
 
 client = gspread.authorize(creds)
 sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1dzvGI_uoFCJoanbbjGeNbEnEfw1tL8WRKYkS4LUZRsY")
