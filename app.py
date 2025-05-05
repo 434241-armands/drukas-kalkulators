@@ -22,7 +22,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_name(
     scope
 )
 client = gspread.authorize(creds)
-sheet = client.open_by_url("TAVS_SHEET_URL")
+sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1dzvGI_uoFCJuwnhDj64hEmEwimTbLmW0XVfK54LUZRs/edit?gid=0#gid=0")
 lapas = sheet.worksheets()
 
 @app.route("/")
