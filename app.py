@@ -1,85 +1,28 @@
 from flask import Flask, request, jsonify, render_template
 import requests
 import json
+import traceback
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os
 
 app = Flask(__name__, template_folder="templates")
 
-# ────── 1) Globālie objekti ──────
-api_key = os.environ.get("API_KEY") or "tavs-api-key"
-url     = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key={api_key}"
+# —– 1) Globālie objekti —–
+api_key = os.environ["API_KEY"]  # vai kā tu to noliki
+url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key={api_key}"
 
+# Google Sheets credentials
 scope = [
-  "https://spreadsheets.google.com/feeds",
-  "https://www.googleapis.com/auth/drive"
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
 ]
-
-creds  = ServiceAccountCredentials.from_json_keyfile_name(
-  "/etc/secrets/google-credentials.json",
-  scope
-)
-client = gspread.authorize(creds)
-
-# ────── 2) Tavs endpoint ──────
-@app.route("/", methods=["GET"])
-def index():
-    return render_template("index.html")
-  
-import traceback
-
-@app.route("/gemini", methods=["POST"])
-def gemini_chat():
-    try:
-        # … tur tava esošā loģika, kur saliec noteikumi, saturs, jautajums utt. …
-        # iemācies: definē noteikumi un saturs pirms to lietošanā!
-        # ...
-        return jsonify({"atbilde": atbilde})
-    except Exception as e:
-        print("❌ GEMINI HANDLER ERROR ❌")
-        traceback.print_exc()        # ← te tu redzēsi pilnu stack trace Render Logs
-        return jsonify({
-            "atbilde": f"Kļūda serverī: {e}"
-        }), 500
-
-    # … pārējā loģika (requests.post, error-handling utt.) …
-
-    # ── Debug print ──
-    print("===== GEMINI PAYLOAD =====")
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
-
-    # ── Calls ──
-    response = requests.post(url, json=payload)
-
-    # ── Debug print atbilde ──
-    print("===== GEMINI RAW RESPONSE =====")
-    print("Status:", response.status_code)
-    print(response.text)
-    try:
-        print("Parsed JSON:", json.dumps(response.json(), indent=2, ensure_ascii=False))
-    except:
-        print("Response not JSON.")
-
-    # ── Gala atbilde ──
-    cand = response.json().get("candidates", [{}])[0]
-    text= cand.get("content", {}).get("parts", [])[0].get("text", "Nav atbildes")
-    return jsonify({"atbilde": text})
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5050)
-api_key = "AIzAsSyDdmqY40qJrY6k8U04DpCsBEboRzXGx-s"
-
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-
-# 🔑 Izmanto Render Secret File ar Google servisa konta atslēgu
 creds = ServiceAccountCredentials.from_json_keyfile_name(
     "/etc/secrets/google-credentials.json",
     scope
 )
-
 client = gspread.authorize(creds)
-sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1dzvGI_uoFCJoanbbjGeNbEnEfw1tL8WRKYkS4LUZRsY")
+sheet = client.open_by_url("TAVS_SHEET_URL")
 lapas = sheet.worksheets()
 
 @app.route("/")
@@ -88,54 +31,67 @@ def index():
 
 @app.route("/gemini", methods=["POST"])
 def gemini_chat():
-    data = request.get_json()
-    jautajums = data.get("jautajums")
+    try:
+        # — 1) Saņem jautājumu no front-end
+        data      = request.get_json()
+        jautajums = data.get("jautajums", "").strip()
+        if not jautajums:
+            return jsonify({"error": "Nav jautājuma"}), 400
 
-    if not jautajums:
-        return jsonify({"tablide": "❗ Nav saņemts jautājums"}), 400
+        # — 2) Uztaisi noteikumu un tabulu strings no Google Sheet
+        #    Pieņemsim, ka pirmajā lapā ir tabula, otrajā ir noteikumi utt.
+        noteikumi_lapa = lapas[0]
+        tabula_lapa    = lapas[1]
+        # Izveido noteikumu stringu (piemēram, apvieno visu kolonnas A saturu):
+        noteikumi = "\n".join(noteikumi_lapa.col_values(1))
+        # Izveido tabulas stringu (piem., katra rinda ar tabulatoru):
+        rows = tabula_lapa.get_all_values()
+        saturs = "\n".join(["\t".join(r) for r in rows])
 
-    saturs = ""
-    for lapa in lapas:
-        saturs += f"--- {lapa.title} ---\n"
-        rindas = lapa.get_all_values()
-        for rinda in rindas:
-            saturs += " | ".join(rinda) + "\n"
+        # — 3) Saliek pilnu prompt tekstu
+        tekst = (
+            f"Tavs uzdevums ir noteikt cenu drukai, balstoties uz šādiem piemēriem un tabulu.\n"
+            f"Lūdzu, ņem vērā kļūdas un pareizās atbildes.\n\n"
+            f"Noteikumi:\n{noteikumi}\n\n"
+            f"Tabulas:\n{saturs}\n\n"
+            f"Jautājums: {jautajums}"
+        )
 
-    teksts = f"""Tavs uzdevums ir noteikt cenu drukai, balstoties uz šādiem piemēriem un tabulu (skatīt zemāk).
-Lūdzu, ņem vērā dotās kļūdas un pareizās atbildes.
+        # — 4) Sagatavo payload
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": tekst}
+                    ]
+                }
+            ]
+        }
 
-Noteikumi:
-Nav datu (vietturis)
+        # — 5) Sūti pieprasījumu uz Gemini API
+        response = requests.post(url, json=payload)
+        if response.status_code != 200:
+            return jsonify({"error": f"Gemini kļūda: {response.status_code}"}), 502
 
-Tabulas:
-{saturs}
+        # — 6) Izvelk atbildi no API JSON
+        candidates = response.json().get("candidates", [])
+        if not candidates:
+            return jsonify({"error": "Nav atbilžu no Gemini"}), 502
 
-Jautājums: {jautajums}""".format(saturs=saturs, jautajums=jautajums)
+        atbilde = candidates[0]\
+            .get("content", {})\
+            .get("parts", [])[0]\
+            .get("text", "")
 
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": teksts
-                    }
-                ]
-            }
-        ]
-    }
+        # — 7) Atgriež back-front
+        return jsonify({"atbilde": atbilde})
 
-    print("==== PROMTS ====")
-    print(teksts)
-
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key={api_key}"
-    response = requests.post(url, json=payload)
-    if response.status_code != 200:
-        print("Gemini status:", response.status_code)
-        print("Gemini atbilde:", response.text)
-        return jsonify({"tablide": "❌ Gemini kļūda"}), 500
-
-    atbilde = response.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Nav atbildes")
-    return jsonify({"tablide": atbilde})
+    except Exception as e:
+        # Izmet traceback Render logs
+        print("❌ GEMINI HANDLER ERROR ❌")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5050)
+    # debug=True lokāli, bet Render var darboties arī bez tā
+    app.run(host="0.0.0.0", port=5050, debug=True)
