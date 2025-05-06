@@ -1,9 +1,5 @@
 from flask import Flask, request, jsonify, render_template
 import os
-
-SHEET_ID = os.getenv("SHEET_ID")
-if not SHEET_ID:
-    raise RuntimeError("VIDES MAINĪGAIS SHEET_ID NAV IESTATĪTS!")
 import json
 import requests
 import gspread
@@ -17,16 +13,20 @@ MODEL   = "models/gemini-1.5-pro"
 GENERATE_URL = f"https://generativelanguage.googleapis.com/v1/{MODEL}:generateContent?key={API_KEY}"
 
 # 2. Google Sheets configuration (rules + table)
-SCOPE      = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/drive"]
-CREDS_PATH = "/etc/secrets/google-credentials.json"  # Render Secret Files mount
+# 2.1 Nolasām Sheet ID no ENV un pārbaudām
+SHEET_ID = os.getenv("SHEET_ID")
+if not SHEET_ID:
+    raise RuntimeError("VIDES MAINĪGAIS SHEET_ID NAV IESTATĪTS!")
+
+# 2.2 Authorization izmantojot Render Secret File
+CREDS_PATH = "/etc/secrets/google-credentials.json"
+SCOPE      = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds      = ServiceAccountCredentials.from_json_keyfile_name(CREDS_PATH, SCOPE)
 gc         = gspread.authorize(creds)
 
-SHEET_ID = os.getenv("SHEET_ID")
-workbook  = gc.open_by_key(SHEET_ID)
-worksheet = workbook.worksheet("Gemini Prompt")
-sheet_url  = "https://docs.google.com/spreadsheets/d/https://docs.google.com/spreadsheets/d/1dzvGI_uoFCJuwnhDj64hEmEwimTbLmW0XVfK54LUZRs/edit?gid=0#gid=0"
-worksheet  = gc.open_by_url(sheet_url).worksheet("Gemini Prompt")
+# 2.3 Atveram workbook pēc key un konkrēto cilni
+wb        = gc.open_by_key(SHEET_ID)
+worksheet = wb.worksheet("Gemini Prompt")
 
 @app.route("/")
 def index():
