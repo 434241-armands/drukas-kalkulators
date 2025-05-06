@@ -18,16 +18,27 @@ SHEET_ID = os.getenv("SHEET_ID")
 if not SHEET_ID:
     raise RuntimeError("VIDES MAINĪGAIS SHEET_ID NAV IESTATĪTS!")
 
-# 2.2 Authorization izmantojot RGeender Secret File
-CREDS_PATH = "/etc/secrets/google-credentials.json"
-SCOPE      = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds      = ServiceAccountCredentials.from_json_keyfile_name(CREDS_PATH, SCOPE)
-gc         = gspread.authorize(creds)
+# 2. Google Sheets konfigurācija
+SCOPE       = ["https://spreadsheets.google.com/feeds",
+               "https://www.googleapis.com/auth/drive"]
+CREDS_PATH  = "/etc/secrets/google-credentials.json"  # tavs secrets mount
+creds       = ServiceAccountCredentials.from_json_keyfile_name(CREDS_PATH, SCOPE)
+gc          = gspread.authorize(creds)
 
-# 2.3 Atveram workbook pēc key un konkrēto cilni
-workbook = gc.open_by_key(SHEET_ID)
-print("Available tabs:", [ws.title for ws in workbook.worksheets()])
-worksheet = workbook.worksheet("Gemini Promt")
+# tieši šeit:
+SHEET_ID    = os.getenv("SHEET_ID")   # vai cits nosaukums, ja tā uzstādīji Render env
+if not SHEET_ID:
+    raise RuntimeError("VIDES MAINĪGAIS SHEET_ID NAV IESTATĪTS!")
+
+# atveram pēc key:
+workbook    = gc.open_by_key(SHEET_ID)
+
+# **pareizais** tab nosaukums no “Available tabs”:
+worksheet   = workbook.worksheet("Gemini Promt")
+
+# tad vari-lasīt datus:
+entries     = worksheet.get_all_values()
+# … tālāk veido savu promptu no entries …
 
 @app.route("/")
 def index():
