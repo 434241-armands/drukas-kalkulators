@@ -4,6 +4,8 @@ import json
 import requests
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__, template_folder="templates")
 
@@ -13,6 +15,19 @@ MODEL   = "models/gemini-1.5-pro"
 GENERATE_URL = f"https://generativelanguage.googleapis.com/v1/{MODEL}:generateContent?key={API_KEY}"
 
 # 2. Google Sheets konfigurācija
+# ————————————————————————————————————————————————————
+# pirms Google Sheets lasīšanas:
+print(">>> SHEET_ID:", SHEET_ID)
+workbook = gc.open_by_key(SHEET_ID)
+print(">>> Available tabs:", [ws.title for ws in workbook.worksheets()])
+
+# tad atlasām tabulu:
+worksheet = workbook.worksheet("Gemini Promt")  # vai tieši tas nosaukums, kas uzdrukāts Available tabs
+print(">>> Loaded worksheet:", worksheet.title)
+
+entries = worksheet.get_all_values()
+print(">>> Entries:", entries)
+# ————————————————————————————————————————————————————
 SCOPE      = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive"
@@ -31,6 +46,19 @@ workbook = gc.open_by_key(SHEET_ID)
 # DEBUG: izdrukā, kādi tab nosaukumi patiešām ir
 print("Available tabs:", [ws.title for ws in workbook.worksheets()])
 
+# ————————————————————————————————————————————————————
+# pirms Gemini pieprasījuma:
+print(">>> GEMINI PAYLOAD:", payload)
+
+# pēc requests.post:
+response = requests.post(GENERATE_URL, json=payload)
+print(">>> GEMINI RAW RESPONSE:", response.status_code, response.text)
+try:
+    print(">>> GEMINI PARSED RESPONSE:")
+    print(json.dumps(response.json(), indent=2, ensure_ascii=False))
+except:
+    print(">>> GEMINI NEPARSĒJAMS JSON!")
+    
 # 4. **Pareizais** worksheet nosaukums no “Available tabs”:
 worksheet = workbook.worksheet("Gemini Promt")
 
@@ -111,5 +139,4 @@ def gemini_chat():
     return jsonify({"atbilde": atbilde})
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5050))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5050)), debug=True)
