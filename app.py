@@ -1,106 +1,114 @@
-from flask import Flask, request, jsonify, render_template
 import os
 import json
 import logging
 import requests
 import gspread
+from flask import Flask, request, jsonify, render_template
 from oauth2client.service_account import ServiceAccountCredentials
 
-# --- Konfigurācija un autentifikācija -----------------------------------------
-logging.basicConfig(level=logging.DEBUG)
+# Initialize Flask app and logger
+tls = Flask(__name__, template_folder="templates")
+tls.logger.setLevel(logging.DEBUG)
 
-# 1. Google Sheets autentifikācija
-SCOPE      = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive",
-]
-CREDS_PATH = "/etc/secrets/google-credentials.json"  # Render Secret Files mount
-creds      = ServiceAccountCredentials.from_json_keyfile_name(CREDS_PATH, SCOPE)
-gc         = gspread.authorize(creds)
+# Load environment variables
+API_KEY = os.getenv("API_KEY")
+SHEET_ID = os.getenv("SHEET_ID")
+GOOGLE_CREDS_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")  # JSON string of service account
+CREDS_PATH = "/etc/secrets/google-credentials.json"  # optional file path if mounted
 
-# 2. Load API key un modelis
-API_KEY    = os.environ.get("API_KEY")
+# Validate env vars
 if not API_KEY:
-    raise RuntimeError("VIDES MAINĪGAIS API_KEY NAV IESTATĪTS!")
-MODEL      = os.environ.get("MODEL", "models/gemini-1.5-pro")
+    raise RuntimeError("Env var API_KEY nav iestatīts!")
+if not SHEET_ID:
+    raise RuntimeError("Env var SHEET_ID nav iestatīts!")
+if not GOOGLE_CREDS_JSON and not os.path.exists(CREDS_PATH):
+    raise RuntimeError("Nav pieejami Google credentials! Iestatiet GOOGLE_SERVICE_ACCOUNT_JSON vai pievienojiet failu mount.")
+
+# Prepare Gemini URL
+MODEL = "models/gemini-1.5-pro"
 GENERATE_URL = f"https://generativelanguage.googleapis.com/v1/{MODEL}:generateContent?key={API_KEY}"
 
-# 3. Load Google Sheet ID
-SHEET_ID   = os.environ.get("SHEET_ID")
-if not SHEET_ID:
-    raise RuntimeError("VIDES MAINĪGAIS SHEET_ID NAV IESTATĪTS!")
+# Google Sheets authorization
+SCOPE = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
+if GOOGLE_CREDS_JSON:
+    creds_dict = json.loads(GOOGLE_CREDS_JSON)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+else:
+    creds = ServiceAccountCredentials.from_json_keyfile_name(CREDS_PATH, SCOPE)
+gc = gspread.authorize(creds)
 
-# 4. Atver workbook un parāda pieejamās lapas
+# Open workbook and rules worksheet
 workbook = gc.open_by_key(SHEET_ID)
-available_tabs = [ws.title for ws in workbook.worksheets()]
-logging.debug(f"Available tabs: {available_tabs}")
+tls.logger.debug("Available tabs: %r", [ws.title for ws in workbook.worksheets()])
+RULES_SHEET = "Gemini Promt"
+rules_ws = workbook.worksheet(RULES_SHEET)
+tls.logger.debug("Loaded rules worksheet: %s", rules_ws.title)
 
-# 5. Funkcija, lai izvēlētos pareizo lapu pēc jautājuma
-def pick_sheet_for(query: str):
-    q = query.lower()
-    if "kreklu" in q:
-        name = "kreklu apdruka"
-    elif "papīra" in q or "a4" in q:
-        name = "PAPĪRA CENAS"
-    else:
-        name = "Gemini Promt"
-    logging.debug(f"Picking tab for '{query}': {name}")
-    return workbook.worksheet(name)
-
-# ------------------------------------------------------------------------------
-
-app = Flask(__name__, template_folder="templates")
-
-@app.route("/")
+@tls.route("/")
 def index():
     return render_template("index.html")
 
-@app.route("/gemini", methods=["POST"])
+@tls.route("/gemini", methods=["POST"])
 def gemini_chat():
-    data     = request.get_json() or {}
-    question = data.get("jautajums", "").strip()
-    if not question:
-        return jsonify({"error": "Nav saņemts jautājums"}), 400
-
-    # 1) Izvēlamies tabulu pēc jautājuma satura
     try:
-        sheet    = pick_sheet_for(question)
-        entries  = sheet.get_all_values()
+        data = request.get_json(force=True) or {}
+        jautajums = data.get("jautajums", "").strip()
+        if not jautajums:
+            return jsonify({"error": "Nav saņemts jautājums"}), 400
+
+        # Read example rules
+        records = rules_ws.get_all_records()
+        examples = []
+        for rec in records:
+            q = rec.get("Jautājums")
+            wrong = rec.get("Kļūdaina atbilde")
+            correct = rec.get("Pareiza atbilde")
+            if q and wrong and correct:
+                examples.append({"q": q, "wrong": wrong, "correct": correct})
+        examples = examples[-5:]
+
+        # Build prompt
+        prompt_lines = [
+            "Tavs uzdevums: analizēt jautājumu un dot pareizu drukas cenu.",
+            "Šeit daži piemēri (jautājums, kļūdaina atbilde → pareiza atbilde):"
+        ]
+        for ex in examples:
+            prompt_lines.append(
+                f"Q: {ex['q']}\nWrong: {ex['wrong']}\nCorrect: {ex['correct']}"
+            )
+        prompt_lines.append(f"Jauns jautājums: {jautajums}")
+        prompt_text = "\n\n".join(prompt_lines)
+        tls.logger.debug("Built prompt (len %d): %s", len(prompt_text), prompt_text)
+
+        # Send to Gemini
+        payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
+        tls.logger.debug("Sending payload size %d bytes", len(json.dumps(payload)))
+        r = requests.post(GENERATE_URL, json=payload, timeout=15)
+        tls.logger.debug("Gemini status %s, raw: %s", r.status_code, r.text)
+
+        if r.status_code != 200:
+            return jsonify({"error": f"Gemini kļūda: {r.status_code}"}), 502
+
+        resp_json = r.json()
+        cands = resp_json.get("candidates", [])
+        if not cands:
+            return jsonify({"error": "Nav kandidātu atbilžu"}), 502
+
+        content = cands[0].get("content", {})
+        parts = content.get("parts", [])
+        if not parts:
+            return jsonify({"error": "Neatrasta atbilžu daļa"}), 502
+
+        atbilde = parts[0].get("text", "").strip()
+        return jsonify({"atbilde": atbilde})
+
     except Exception as e:
-        logging.error(f"Error loading sheet for '{question}': {e}")
-        return jsonify({"error": "Neizdevās piekļūt datiem no Google Sheets"}), 500
-
-    # 2) Veidojam promptu Gemini modelim
-    prompt = (
-        "Tavs uzdevums ir noteikt cenu drukai, balstoties uz tabulas datiem.\n\n"
-        "Tabula:\n" + json.dumps(entries, ensure_ascii=False, indent=2) + "\n\n"
-        f"Jautājums: {question}"
-    )
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    logging.debug(f"Payload: {json.dumps(payload, ensure_ascii=False)}")
-
-    # 3) Nosūtām pieprasījumu uz Gemini API
-    try:
-        resp = requests.post(GENERATE_URL, json=payload)
-        logging.debug(f"Gemini response status: {resp.status_code}")
-        raw  = resp.json()
-        logging.debug(f"Gemini raw response: {json.dumps(raw, ensure_ascii=False)}")
-    except Exception as e:
-        logging.error(f"Gemini HTTP error: {e}")
-        return jsonify({"error": "Kļūda pieprasot atbildi no Gemini modela"}), 502
-
-    if resp.status_code != 200:
-        return jsonify({"error": "Gemini kļūda", "detail": raw}), 502
-
-    # 4) Izvelkam atbildi no kandidātiem
-    try:
-        text = raw["candidates"][0]["content"]["parts"][0]["text"]
-    except Exception as e:
-        logging.error(f"Failed to parse Gemini response: {e}")
-        return jsonify({"error": "Neizdevās apstrādāt Gemini atbildi"}), 500
-
-    return jsonify({"atbilde": text})
+        tls.logger.exception("Error in /gemini")
+        return jsonify({"error": "Servera kļūda", "detail": str(e)}), 500
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 5050))
+    tls.run(host="0.0.0.0", port=port)
