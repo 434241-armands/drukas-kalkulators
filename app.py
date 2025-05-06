@@ -78,9 +78,13 @@ def gemini_chat():
         if resp.status_code != 200:
             return jsonify({"error":f"Gemini kļūda: {resp.status_code}"}), 502
 
-        j = resp.json()
-        candidate = j["candidates"][0]["parts"][0]["text"]
-        return jsonify({"atbilde": candidate})
+        resp_json   = response.json()
+        candidates  = resp_json.get("candidates", [])
+        content     = candidates[0].get("content", {}) if candidates else {}
+        parts       = content.get("parts", [])
+        atbilde     = parts[0].get("text", "") if parts else ""
+        return jsonify({"atbilde": atbilde})
+
 
     except Exception as e:
         app.logger.exception("Neizdevās apstrādāt /gemini pieprasījumu")
