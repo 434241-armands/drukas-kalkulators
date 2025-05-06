@@ -18,7 +18,7 @@ SHEET_ID = os.getenv("SHEET_ID")
 if not SHEET_ID:
     raise RuntimeError("VIDES MAINĪGAIS SHEET_ID NAV IESTATĪTS!")
 
-# 2.2 Authorization izmantojot Render Secret File
+# 2.2 Authorization izmantojot RGeender Secret File
 CREDS_PATH = "/etc/secrets/google-credentials.json"
 SCOPE      = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds      = ServiceAccountCredentials.from_json_keyfile_name(CREDS_PATH, SCOPE)
@@ -26,7 +26,7 @@ gc         = gspread.authorize(creds)
 
 # 2.3 Atveram workbook pēc key un konkrēto cilni
 wb        = gc.open_by_key(SHEET_ID)
-worksheet = wb.worksheet("Gemini Prompt")
+worksheet = wb.worksheet("NRJ CENAS")
 
 @app.route("/")
 def index():
