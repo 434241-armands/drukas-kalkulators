@@ -27,7 +27,7 @@ gc         = gspread.authorize(creds)
 # 2.3 Atveram workbook pēc key un konkrēto cilni
 workbook = gc.open_by_key(SHEET_ID)
 print("Available tabs:", [ws.title for ws in workbook.worksheets()])
-worksheet = workbook.worksheet("NRJ CENAS")
+worksheet = workbook.worksheet("Gemini Promt")
 
 @app.route("/")
 def index():
