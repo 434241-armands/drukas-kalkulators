@@ -59,15 +59,18 @@ def gemini_chat():
         if not jautajums:
             return jsonify({"error": "Nav saņemts jautājums"}), 400
 
-        # Read example rules
-        records = rules_ws.get_all_records()
+                # Read example rules from sheet values (allow duplicate/blank headers)
+        values = rules_ws.get_all_values()
         examples = []
-        for rec in records:
-            q = rec.get("Jautājums")
-            wrong = rec.get("Kļūdaina atbilde")
-            correct = rec.get("Pareiza atbilde")
-            if q and wrong and correct:
-                examples.append({"q": q, "wrong": wrong, "correct": correct})
+        for row in values:
+            # Expect columns: [*, *, Question, Wrong, Correct]
+            if len(row) >= 5:
+                q = row[2].strip()
+                wrong = row[3].strip()
+                correct = row[4].strip()
+                if q and wrong and correct:
+                    examples.append({"q": q, "wrong": wrong, "correct": correct})
+        # Use last up to 5 examples for prompt brevity
         examples = examples[-5:]
 
         # Build prompt
