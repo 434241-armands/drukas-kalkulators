@@ -12,32 +12,30 @@ API_KEY = os.environ["API_KEY"]
 MODEL   = "models/gemini-1.5-pro"
 GENERATE_URL = f"https://generativelanguage.googleapis.com/v1/{MODEL}:generateContent?key={API_KEY}"
 
-# 2. Google Sheets configuration (rules + table)
-# 2.1 Nolasām Sheet ID no ENV un pārbaudām
+# 2. Google Sheets konfigurācija
+SCOPE      = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
+CREDS_PATH = "/etc/secrets/google-credentials.json"  # tā kā tu to ieliki Render Secret Files
+creds      = ServiceAccountCredentials.from_json_keyfile_name(CREDS_PATH, SCOPE)
+gc         = gspread.authorize(creds)
+
+# 3. Atveram workbook pēc SHEET_ID (uzstādi SHEET_ID env vars ar tavu key)
 SHEET_ID = os.getenv("SHEET_ID")
 if not SHEET_ID:
     raise RuntimeError("VIDES MAINĪGAIS SHEET_ID NAV IESTATĪTS!")
 
-# 2. Google Sheets konfigurācija
-SCOPE       = ["https://spreadsheets.google.com/feeds",
-               "https://www.googleapis.com/auth/drive"]
-CREDS_PATH  = "/etc/secrets/google-credentials.json"  # tavs secrets mount
-creds       = ServiceAccountCredentials.from_json_keyfile_name(CREDS_PATH, SCOPE)
-gc          = gspread.authorize(creds)
+workbook = gc.open_by_key(SHEET_ID)
 
-# tieši šeit:
-SHEET_ID    = os.getenv("SHEET_ID")   # vai cits nosaukums, ja tā uzstādīji Render env
-if not SHEET_ID:
-    raise RuntimeError("VIDES MAINĪGAIS SHEET_ID NAV IESTATĪTS!")
+# DEBUG: izdrukā, kādi tab nosaukumi patiešām ir
+print("Available tabs:", [ws.title for ws in workbook.worksheets()])
 
-# atveram pēc key:
-workbook    = gc.open_by_key(SHEET_ID)
+# 4. **Pareizais** worksheet nosaukums no “Available tabs”:
+worksheet = workbook.worksheet("Gemini Promt")
 
-# **pareizais** tab nosaukums no “Available tabs”:
-worksheet   = workbook.worksheet("Gemini Promt")
-
-# tad vari-lasīt datus:
-entries     = worksheet.get_all_values()
+# Ja šeit vairs nav WorksheetNotFound — lasām datus:
+entries = worksheet.get_all_values()
 # … tālāk veido savu promptu no entries …
 
 @app.route("/")
