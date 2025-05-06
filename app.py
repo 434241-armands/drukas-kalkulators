@@ -44,10 +44,17 @@ def index():
 
 @app.route("/gemini", methods=["POST"])
 def gemini_chat():
-    data     = request.get_json() or {}
+    data = request.get_json() or {}
+    print("➤ Incoming JSON:", data)
+
     jautajums = data.get("jautajums", "").strip()
     if not jautajums:
-        return jsonify({"error": "Nav saņemts jautājums"}), 400
+        return jsonify({"error":"Nav saņemts jautājums"}), 400
+
+    # … te tava gspread + Gemini kods …
+
+    print("➤ Gemini atbilde:", atbilde)
+    return jsonify({"atbilde": atbilde})
 
     # 3. Build rules and table content
     rows = worksheet.get_all_values()[1:]  # skip header
