@@ -52,43 +52,44 @@ def index():
 # ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 @app.route("/gemini", methods=["POST"])
 def gemini_chat():
+    data     = request.get_json() or {}
+    jautajums = data.get("jautajums", "").strip()
+    if not jautajums:
+        return jsonify({"error": "Nav saņemts jautājums"}), 400
+
+    # 1) Sagatavo Gemini payload
+    payload = {
+        "model": MODEL,
+        "prompt": jautajums,
+        # ... vēl atbilstoši Gemini API fieldu nosaukumi, ja tev ir
+        # “generateContent” vai cita struktūra, tad pielāgo šeit
+    }
+
+    # 2) Sūti pieprasījumu
+    r = requests.post(GENERATE_URL, json=payload)
+    app.logger.debug("===== GEMINI RAW RESPONSE =====\n%s", r.text)
+
+    # 3) Parsē JSON
     try:
-        data      = request.get_json(force=True) or {}
-        jautajums = data.get("jautajums", "").strip()
-        if not jautajums:
-            return jsonify({"error":"Nav saņemts jautājums"}), 400
+        resp_json = r.json()
+    except ValueError:
+        return jsonify({"error": "Gemini atbilde nav derīgs JSON"}), 502
 
-        # 5a) nolasām Google Sheet
-        entries = worksheet.get_all_values()
-        app.logger.debug("Sheet entries: %r", entries)
+    app.logger.debug("===== GEMINI HTTP %s: %s", r.status_code, json.dumps(resp_json, ensure_ascii=False))
 
-        # 5b) saliekam promptu
-        tekst = (
-            f"Tavs uzdevums ir noteikt cenu drukai...\n\n"
-            f"Google Tabulas dati:\n{json.dumps(entries, ensure_ascii=False, indent=2)}\n\n"
-            f"Jautājums: {jautajums}"
-        )
-        app.logger.debug("Prompt:\n%s", tekst)
+    # 4) Izvelc kandidātus
+    cands = resp_json.get("candidates", [])
+    if not cands:
+        return jsonify({"error": f"Gemini kļūda: {r.status_code}"}), 502
 
-        # 5c) sūtām uz Gemini
-        payload  = {"contents":[{"parts":[{"text": tekst}]}]}
-        resp     = requests.post(GENERATE_URL, json=payload, timeout=30)
-        app.logger.debug("Gemini HTTP %s: %s", resp.status_code, resp.text)
+    # 5) Iekš content → parts
+    content = cands[0].get("content", {})
+    parts   = content.get("parts", [])
+    if not parts:
+        return jsonify({"error": "Gemini neatgrieza atbilžu daļu"}), 502
 
-        if resp.status_code != 200:
-            return jsonify({"error":f"Gemini kļūda: {resp.status_code}"}), 502
-
-        resp_json   = response.json()
-        candidates  = resp_json.get("candidates", [])
-        content     = candidates[0].get("content", {}) if candidates else {}
-        parts       = content.get("parts", [])
-        atbilde     = parts[0].get("text", "") if parts else ""
-        return jsonify({"atbilde": atbilde})
-
-
-    except Exception as e:
-        app.logger.exception("Neizdevās apstrādāt /gemini pieprasījumu")
-        return jsonify({"error":"Servera kļūda","detail":str(e)}), 500
+    atbilde = parts[0].get("text", "").strip()
+    return jsonify({"atbilde": atbilde})
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––  
 if __name__=="__main__":
