@@ -2,4 +2,15 @@ Flask==2.2.2
 werkzeug==2.2.3
 gspread==5.10.0
 oauth2client==4.1.3
+Flask==2.2.2
+werkzeug==2.2.3
+gspread==5.10.0
+oauth2client==4.1.3
+
+# Papildus prasības mūsu kodam
+pandas>=2.0.0
+requests>=2.30.0
+
+# Ja lasi Excel (.xlsx) ar pandas.read_excel:
+openpyxl>=3.0.0
 
