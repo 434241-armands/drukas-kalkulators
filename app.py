@@ -1,112 +1,94 @@
 import os
+import re
 import json
 import logging
+import pandas as pd
 import requests
-import gspread
-from flask import Flask, request, jsonify, render_template
-from oauth2client.service_account import ServiceAccountCredentials
+from flask import Flask, request, jsonify
 
-# Initialize Flask app and logger
-app = Flask(__name__, template_folder="templates")
+app = Flask(__name__)
 app.logger.setLevel(logging.DEBUG)
 
-# Load environment variables
-API_KEY             = os.getenv("API_KEY")
-SHEET_ID            = os.getenv("SHEET_ID")
-GOOGLE_CREDS_JSON   = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")  # JSON string
-CREDS_PATH          = "/etc/secrets/google-credentials.json"     # fallback path
+# —————————————— Konfigurācija ——————————————
+# API galapunkts un atslēga
+GEMINI_URL   = os.getenv("GEMINI_URL",   "https://api.gemini.example/v1/chat")
+API_KEY      = os.getenv("API_KEY",      "")
+# Ceļš uz pilno cenu CSV (vienā tabulā ar Sheet kolonu) vai atsevišķām CSV
+PRICE_CSV    = os.getenv("PRICE_CSV",    "price_sheet_full.csv")
 
-# Validate env vars
-if not API_KEY:
-    raise RuntimeError("Env var API_KEY nav iestatīts!")
-if not SHEET_ID:
-    raise RuntimeError("Env var SHEET_ID nav iestatīts!")
-if not GOOGLE_CREDS_JSON and not os.path.exists(CREDS_PATH):
-    raise RuntimeError("Nav pieejami Google credentials! Iestatiet GOOGLE_SERVICE_ACCOUNT_JSON vai mountējiet failu.")
+# ———————————— Ielāde un priekšapstrāde ————————————
+app.logger.debug(f"Ielādēju cenas no {PRICE_CSV!r}")
+price_df = pd.read_csv(PRICE_CSV)
 
-# Prepare Gemini URL
-MODEL        = "models/gemini-1.5-pro"
-GENERATE_URL = f"https://generativelanguage.googleapis.com/v1/{MODEL}:generateContent?key={API_KEY}"
+# Pārliecināmies, ka ciparu kolonnas
+for col in ("MinQty","MaxQty","UnitPrice"):
+    price_df[col] = pd.to_numeric(price_df[col], errors="coerce")
+# Neierobežots MaxQty => inf
+price_df["MaxQty"] = price_df["MaxQty"].fillna(float("inf"))
 
-# Google Sheets authorization
-SCOPE = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive",
-]
-if GOOGLE_CREDS_JSON:
-    creds_dict = json.loads(GOOGLE_CREDS_JSON)
-    creds      = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
-else:
-    creds      = ServiceAccountCredentials.from_json_keyfile_name(CREDS_PATH, SCOPE)
-gc = gspread.authorize(creds)
+# Samazinam cenu tabulu uz digitāldrukas daļu kā piemēru
+digital_df = price_df[price_df.Sheet == "Digital_Print"][["MinQty","MaxQty","Mode","UnitPrice"]]
 
-# Open workbook and rules worksheet
-workbook    = gc.open_by_key(SHEET_ID)
-app.logger.debug("Available tabs: %r", [ws.title for ws in workbook.worksheets()])
-RULES_SHEET = "Gemini Promt"
-rules_ws    = workbook.worksheet(RULES_SHEET)
-app.logger.debug("Loaded rules worksheet: %s", rules_ws.title)
+# Konvertē DataFrame uz CSV-string, lai ērti iekopēt promptā
+digital_csv = digital_df.to_csv(index=False)
 
-@app.route("/")
-def index():
-    return render_template("index.html")
-
+# —————————————— Flask endpoint ——————————————
 @app.route("/gemini", methods=["POST"])
-def gemini_chat():
+def gemini():
     try:
-        data      = request.get_json(force=True) or {}
-        jautajums = data.get("jautajums", "").strip()
-        if not jautajums:
-            return jsonify({"error": "Nav saņemts jautājums"}), 400
+        data = request.get_json()
+        question = data.get("question", "").strip()
+        if not question:
+            return jsonify({"error": "Nav jautājuma laukā `question`"}), 400
 
-        # Read up to 5 last examples from sheet: Question, Wrong, Correct
-        values   = rules_ws.get_all_values()
-        examples = []
-        for row in values:
-            if len(row) >= 5:
-                q, wrong, correct = row[2].strip(), row[3].strip(), row[4].strip()
-                if q and wrong and correct:
-                    examples.append({"q": q, "wrong": wrong, "correct": correct})
-        examples = examples[-5:]
-
-        # Build prompt
-        prompt_lines = [
-            "Tavs uzdevums: analizēt jautājumu un dot pareizu drukas cenu.",
-            "Izmanto vienīgi tabulas datus un mūsu piemērus—nedod nekādas atrunas!",
-            "Šeit vairāki piemēri (jautājums → kļūdaina atbilde → pareiza atbilde):"
+        # 1) Sagatavo ziņojumu sarakstu Gemini
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Tu esi precīzs drukas cenu kalkulators. "
+                    "Izmanto tieši šo cenu tabulu digitālajai drukai (EUR par A3 loksni):\n"
+                    + digital_csv +
+                    "\nAprēķinus veic šādi:\n"
+                    "1. Izvelk no jautājuma daudzumu (gab.)\n"
+                    "2. Pārbauda, vai min_qty ≤ qty ≤ max_qty\n"
+                    "3. Cena = qty × UnitPrice\n"
+                    "4. Atbild: “Cena: XX.XX EUR (Y.YYY EUR/gab.)” ar 2 decimālpunktu precizitāti."
+                )
+            },
+            {
+                "role": "user",
+                "content": question
+            }
         ]
-        for ex in examples:
-            prompt_lines.append(
-                f"Q: {ex['q']}\nWrong: {ex['wrong']}\nCorrect: {ex['correct']}"
-            )
-        prompt_lines.append(f"Jauns jautājums: {jautajums}")
-        prompt_text = "\n\n".join(prompt_lines)
-        app.logger.debug("Built prompt (len %d):\n%s", len(prompt_text), prompt_text)
 
-        # Send to Gemini
-        payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
-        app.logger.debug("Sending payload: %s", json.dumps(payload)[:200])
-        r = requests.post(GENERATE_URL, json=payload, timeout=15)
-        app.logger.debug("Gemini status %s, raw: %s", r.status_code, r.text)
+        # 2) Nosūta pieprasījumu Gemini AI
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "gemini-advanced",
+            "messages": messages,
+            "temperature": 0.0
+        }
 
-        if r.status_code != 200:
-            return jsonify({"error": f"Gemini kļūda: {r.status_code}"}), 502
+        app.logger.debug("Sūtu pieprasījumu Gemini: %s", json.dumps(payload))
+        resp = requests.post(GEMINI_URL, headers=headers, json=payload, timeout=30)
+        resp.raise_for_status()
 
-        resp_json   = r.json()
-        cands       = resp_json.get("candidates", [])
-        if not cands:
-            return jsonify({"error": "Nav kandidātu atbilžu"}), 502
-
-        parts = cands[0].get("content", {}).get("parts", [])
-        if not parts:
-            return jsonify({"error": "Neatrasta atbilžu daļa"}), 502
-
-        atbilde = parts[0].get("text", "").strip()
-        return jsonify({"atbilde": atbilde})
+        result = resp.json()
+        # Pieņemam, ka atbilde nāk šādā struktūrā
+        # {"choices":[{"message":{"content":"…"}}, …]}
+        ats = result["choices"][0]["message"]["content"].strip()
+        return jsonify({"answer": ats})
 
     except Exception as e:
-        app.logger.exception("Error in /gemini")
-        return jsonify({"error": "Servera kļūda", "detail": str(e)}), 500
+        app.logger.exception("Kļūda `/gemini` galā")
+        return jsonify({
+            "error": "Servera kļūda",
+            "detail": str(e)
+        }), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
