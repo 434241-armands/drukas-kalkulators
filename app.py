@@ -25,17 +25,55 @@ if "/export?format=xlsx" not in PRICE_SHEET_URL:
     app.logger.error("PRICE_SHEET_URL does not look like an XLSX export URL.")
     raise SystemExit("PRICE_SHEET_URL must include '/export?format=xlsx' for Google Sheets XLSX export.")
 
-# Load all sheets from the workbook
-app.logger.debug(f"Loading price data from: {PRICE_SHEET_URL}")
-all_sheets = pd.read_excel(PRICE_SHEET_URL, sheet_name=None, engine="openpyxl")
+# Load and clean the 'digitāldruka' sheet from the workbook
+app.logger.debug(f"Loading raw sheet '{sheet_name}' from: {PRICE_SHEET_URL}")
+raw_df = pd.read_excel(PRICE_SHEET_URL, sheet_name=sheet_name, header=None, engine="openpyxl")
 
-# Name of the sheet that contains digital print prices
-sheet_name = "digitāldruka"
-if sheet_name not in all_sheets:
-    app.logger.error(f"Sheet '{sheet_name}' not found in workbook.")
-    raise SystemExit(f"Sheet '{sheet_name}' must exist in the Google Sheets document.")
+# Identify header row where second column equals 'Skaits'
+header_idx = raw_df.index[raw_df.iloc[:,1] == 'Skaits'].tolist()
+if not header_idx:
+    app.logger.error("Header row with 'Skaits' not found in sheet")
+    raise SystemExit("Cannot locate header row in digitāldruka sheet.")
+header_row = header_idx[0]
+config_row = header_row + 1
 
-price_df = all_sheets[sheet_name]
+# Extract column ranges from the header row (from third column onwards)
+ranges = raw_df.iloc[header_row, 2:].astype(str).tolist()
+
+# Build cleaned price_df from subsequent row
+records = []
+mode_names = raw_df.iloc[config_row, 1:].astype(str).tolist()
+for idx, mode in enumerate(mode_names, start=1):
+    prices = raw_df.iloc[config_row, 2+idx-1]
+# Actually iterate per range
+for col_idx, mode in enumerate(raw_df.iloc[config_row,1:].astype(str), start=1):
+    price_vals = raw_df.iloc[config_row, col_idx+1]
+# Simplify: use previous logic as function
+records = []
+for col_idx, rng in enumerate(ranges, start=2):
+    for row_offset in header_idx:
+        # use only config_row
+        break
+# Let's implement correctly
+records = []
+# Single config row expected: header_row for ranges, config_row for prices
+for col_idx, qty_range in enumerate(ranges, start=2):
+    minq, maxq = qty_range.split('–') if '–' in qty_range else (qty_range, '')
+    for r in [config_row]:
+        mode = str(raw_df.iloc[r,1]).strip()
+        price = raw_df.iloc[r, col_idx]
+        records.append({
+            'MinQty': minq.strip(),
+            'MaxQty': maxq.strip(),
+            'Mode': mode,
+            'UnitPrice': price
+        })
+price_df = pd.DataFrame(records)
+
+# Convert columns to numeric and set MaxQty infinity
+price_df['MinQty'] = pd.to_numeric(price_df['MinQty'], errors='coerce')
+price_df['MaxQty'] = pd.to_numeric(price_df['MaxQty'], errors='coerce').fillna(float('inf'))
+price_df['UnitPrice'] = pd.to_numeric(price_df['UnitPrice'], errors='coerce')
 
 # Ensure required columns exist
 required_cols = ["MinQty", "MaxQty", "Mode", "UnitPrice"]
