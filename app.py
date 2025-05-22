@@ -8,27 +8,40 @@ from flask import Flask, request, jsonify
 app = Flask(__name__)
 app.logger.setLevel(logging.DEBUG)
 
-# Gemini konfigurācija
+# Gemini un Google Sheets iestatījumi
 GEMINI_URL      = os.getenv("GEMINI_URL", "")
 API_KEY         = os.getenv("API_KEY", "")
-
-# Google Sheets CSV public URL
 PRICE_SHEET_URL = os.getenv("PRICE_SHEET_URL", "")
+
 if not PRICE_SHEET_URL:
-    app.logger.error("Environment variable PRICE_SHEET_URL is missing")
-    raise SystemExit("PRICE_SHEET_URL required")
+    app.logger.error("Nav iestatīts vides mainīgais PRICE_SHEET_URL")
+    raise SystemExit("Nenodrošināts PRICE_SHEET_URL")
 
-# Nolasa cenu tabulu tieši no Google Sheets CSV
-app.logger.debug(f"Ielādēju cenas no Google Sheets CSV: {PRICE_SHEET_URL}")
-price_df = pd.read_csv(PRICE_SHEET_URL)
+# Nolasa cenu tabulu — atkarībā no formāta
+app.logger.debug(f"Ielādēju cenas no: {PRICE_SHEET_URL}")
+if PRICE_SHEET_URL.endswith("output=csv"):
+    price_df = pd.read_csv(PRICE_SHEET_URL)
+elif PRICE_SHEET_URL.endswith("output=xlsx") or PRICE_SHEET_URL.endswith("format=xlsx"):
+    price_df = pd.read_excel(PRICE_SHEET_URL, engine="openpyxl")
+else:
+    # mēģinām CSV pēc noklusējuma
+    try:
+        price_df = pd.read_csv(PRICE_SHEET_URL)
+    except Exception:
+        price_df = pd.read_excel(PRICE_SHEET_URL, engine="openpyxl")
 
-# Konvertē kolonnas uz skaitliskiem tipiem
+# Konvertē ciparu kolonnas
 for col in ("MinQty", "MaxQty", "UnitPrice"):
-    price_df[col] = pd.to_numeric(price_df[col], errors="coerce")
+    if col in price_df.columns:
+        price_df[col] = pd.to_numeric(price_df[col], errors="coerce")
 price_df["MaxQty"] = price_df["MaxQty"].fillna(float("inf"))
 
-# Izvēlamies tikai digitālās drukas datus
-digital_df = price_df[price_df["Sheet"] == "Digital_Print"] if "Sheet" in price_df else price_df
+# Izveido tikai “Digital_Print” vai visu tabulu, ja nav Sheet kolonnas
+digital_df = (
+    price_df[price_df["Sheet"] == "Digital_Print"]
+    if "Sheet" in price_df.columns
+    else price_df
+)
 digital_csv = digital_df.to_csv(index=False)
 
 @app.route("/gemini", methods=["POST"])
@@ -43,11 +56,12 @@ def gemini():
         "Izmanto šo cenu tabulu (EUR par A3 loksni):\n\n"
         + digital_csv +
         "\nAprēķina soļi:\n"
-        "1) Izvelk daudzumu (gab.) no jautājuma\n"
-        "2) Izvēlas rindu kur MinQty ≤ qty ≤ MaxQty\n"
-        "3) Aprēķina: qty × UnitPrice\n"
-        "4) Atbild formātā: “Cena: XX.XX EUR (Y.YYY EUR/gab.)” ar 2 dec.\n"
+        "1) No lietotāja jautājuma izvelk daudzumu (gab.)\n"
+        "2) Atrod rindu, kur MinQty ≤ qty ≤ MaxQty\n"
+        "3) Aprēķina cenu: qty × UnitPrice\n"
+        "4) Atbild formātā: “Cena: XX.XX EUR (Y.YYY EUR/gab.)”, ar 2 decimālpunktiem.\n"
     )
+
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user",   "content": question}
@@ -57,12 +71,21 @@ def gemini():
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
     }
-    payload = {"model": "gemini-advanced", "messages": messages, "temperature": 0.0}
-    resp = requests.post(GEMINI_URL, headers=headers, json=payload, timeout=30)
-    resp.raise_for_status()
-    answer = resp.json()["choices"][0]["message"]["content"].strip()
+    payload = {
+        "model": "gemini-advanced",
+        "messages": messages,
+        "temperature": 0.0
+    }
 
-    return jsonify({"answer": answer})
+    try:
+        resp = requests.post(GEMINI_URL, headers=headers, json=payload, timeout=30)
+        resp.raise_for_status()
+        answer = resp.json()["choices"][0]["message"]["content"].strip()
+        return jsonify({"answer": answer})
+    except Exception as e:
+        app.logger.exception("Kļūda zvanot Gemini AI")
+        return jsonify({"error": "Servera kļūda", "detail": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5050)))
+    port = int(os.getenv("PORT", 5050))
+    app.run(host="0.0.0.0", port=port)
