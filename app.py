@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+
 import pandas as pd
 import requests
 from flask import Flask, request, jsonify
@@ -8,58 +9,66 @@ from flask import Flask, request, jsonify
 app = Flask(__name__)
 app.logger.setLevel(logging.DEBUG)
 
-# Gemini un Google Sheets iestatījumi
+# Gemini API endpoint and key
 GEMINI_URL      = os.getenv("GEMINI_URL", "")
 API_KEY         = os.getenv("API_KEY", "")
+
+# Public Google Sheets XLSX export URL (ensure it includes /export?format=xlsx)
 PRICE_SHEET_URL = os.getenv("PRICE_SHEET_URL", "")
 
+# Validate environment variable
 if not PRICE_SHEET_URL:
-    app.logger.error("Nav iestatīts vides mainīgais PRICE_SHEET_URL")
-    raise SystemExit("Nenodrošināts PRICE_SHEET_URL")
+    app.logger.error("Environment variable PRICE_SHEET_URL is not set.")
+    raise SystemExit("PRICE_SHEET_URL is required and must be a Google Sheets export link.")
 
-# Nolasa cenu tabulu — atkarībā no formāta
-app.logger.debug(f"Ielādēju cenas no: {PRICE_SHEET_URL}")
-if PRICE_SHEET_URL.endswith("output=csv"):
-    price_df = pd.read_csv(PRICE_SHEET_URL)
-elif PRICE_SHEET_URL.endswith("output=xlsx") or PRICE_SHEET_URL.endswith("format=xlsx"):
-    price_df = pd.read_excel(PRICE_SHEET_URL, engine="openpyxl")
-else:
-    # mēģinām CSV pēc noklusējuma
-    try:
-        price_df = pd.read_csv(PRICE_SHEET_URL)
-    except Exception:
-        price_df = pd.read_excel(PRICE_SHEET_URL, engine="openpyxl")
+if "/export?format=xlsx" not in PRICE_SHEET_URL:
+    app.logger.error("PRICE_SHEET_URL does not look like an XLSX export URL.")
+    raise SystemExit("PRICE_SHEET_URL must include '/export?format=xlsx' for Google Sheets XLSX export.")
 
-# Konvertē ciparu kolonnas
-for col in ("MinQty", "MaxQty", "UnitPrice"):
-    if col in price_df.columns:
-        price_df[col] = pd.to_numeric(price_df[col], errors="coerce")
-price_df["MaxQty"] = price_df["MaxQty"].fillna(float("inf"))
+# Load all sheets from the workbook
+app.logger.debug(f"Loading price data from: {PRICE_SHEET_URL}")
+all_sheets = pd.read_excel(PRICE_SHEET_URL, sheet_name=None, engine="openpyxl")
 
-# Izveido tikai “Digital_Print” vai visu tabulu, ja nav Sheet kolonnas
-digital_df = (
-    price_df[price_df["Sheet"] == "Digital_Print"]
-    if "Sheet" in price_df.columns
-    else price_df
-)
-digital_csv = digital_df.to_csv(index=False)
+# Name of the sheet that contains digital print prices
+sheet_name = "digitāldruka"
+if sheet_name not in all_sheets:
+    app.logger.error(f"Sheet '{sheet_name}' not found in workbook.")
+    raise SystemExit(f"Sheet '{sheet_name}' must exist in the Google Sheets document.")
+
+price_df = all_sheets[sheet_name]
+
+# Ensure required columns exist
+required_cols = ["MinQty", "MaxQty", "Mode", "UnitPrice"]
+for col in required_cols:
+    if col not in price_df.columns:
+        app.logger.error(f"Missing column '{col}' in sheet '{sheet_name}'.")
+        raise SystemExit(f"Column '{col}' is required in sheet '{sheet_name}'.")
+
+# Convert columns to numeric
+price_df["MinQty"]    = pd.to_numeric(price_df["MinQty"], errors="coerce")
+price_df["MaxQty"]    = pd.to_numeric(price_df["MaxQty"], errors="coerce").fillna(float("inf"))
+price_df["UnitPrice"] = pd.to_numeric(price_df["UnitPrice"], errors="coerce")
+
+# Create CSV string for inclusion in the system prompt
+digital_csv = price_df.to_csv(index=False)
 
 @app.route("/gemini", methods=["POST"])
 def gemini():
     data = request.get_json(force=True)
     question = data.get("question", "").strip()
     if not question:
-        return jsonify({"error": "Nav jautājuma laukā `question`"}), 400
+        return jsonify({"error": "Please provide a 'question' field"}), 400
 
+    # Construct system prompt
     system_prompt = (
-        "Tu esi precīzs digitālās drukas cenu kalkulators. "
-        "Izmanto šo cenu tabulu (EUR par A3 loksni):\n\n"
+        "Tu esi precīzs digitālās drukas cenu kalkulators.\n"
+        "Izmanto tieši šo cenu tabulu (EUR par A3 loksni):\n\n"
         + digital_csv +
         "\nAprēķina soļi:\n"
-        "1) No lietotāja jautājuma izvelk daudzumu (gab.)\n"
-        "2) Atrod rindu, kur MinQty ≤ qty ≤ MaxQty\n"
-        "3) Aprēķina cenu: qty × UnitPrice\n"
-        "4) Atbild formātā: “Cena: XX.XX EUR (Y.YYY EUR/gab.)”, ar 2 decimālpunktiem.\n"
+        "1) No jautājuma izvelk daudzumu (qty).\n"
+        "2) Atrod rindu kur MinQty ≤ qty ≤ MaxQty un Mode atbilst.\n"
+        "3) Aprēķina: total = qty × UnitPrice.\n"
+        "4) Atbild: “Cena: XX.XX EUR (Y.YYY EUR/gab.)” ar 2 decimālpunktiem.\n"
     )
 
     messages = [
@@ -83,8 +92,8 @@ def gemini():
         answer = resp.json()["choices"][0]["message"]["content"].strip()
         return jsonify({"answer": answer})
     except Exception as e:
-        app.logger.exception("Kļūda zvanot Gemini AI")
-        return jsonify({"error": "Servera kļūda", "detail": str(e)}), 500
+        app.logger.exception("Error calling Gemini API")
+        return jsonify({"error": "Server error", "detail": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5050))
